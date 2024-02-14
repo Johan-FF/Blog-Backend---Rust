@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Posts</title>
+  </head>
+  <body>
+    <h1>Blogs</h1>
+    {% for post in posts %}
+    <div>
+      <h2>{{post.title}}</h2>
+      <span>{{post.slug}}</span>
+      <p>{{post.body | truncate(lenght=10)}}</p>
+      <button><a href="/post/{{post.slug}}"> VIEW MORE</a></button>
+    </div>
+    {% endfor %}
+  </body>
+</html>

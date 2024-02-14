@@ -10,56 +10,22 @@ use self::schema::posts::dsl::*;
 
 use dotenvy::dotenv;
 use std::env;
-use tera::{Context, Tera};
 
 use diesel::pg::PgConnection;
 use diesel::prelude::*;
 
 use diesel::r2d2::{ConnectionManager, Pool};
 
-use crate::web::{block, Data, Json, Path};
+use crate::web::{block, Data, Json};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
 #[get("/")]
-async fn index(pool: Data<DbPool>, template: Data<Tera>) -> impl Responder {
+async fn index(pool: Data<DbPool>) -> impl Responder {
     let mut conn = pool.get().expect("db connection error in index");
     match block(move || posts.load::<Post>(&mut conn)).await {
-        Ok(data) => {
-            let mut ctx = Context::new();
-            let data = data.unwrap();
-            ctx.insert("posts", &data);
-            HttpResponse::Ok()
-                .content_type("text/html")
-                .body(template.render("index.html", &ctx).unwrap())
-        }
-        Err(error) => HttpResponse::Ok().body(format!("{:?}", error)),
-    }
-}
-
-#[get("/post/{post_slug}")]
-async fn post(pool: Data<DbPool>, template: Data<Tera>, post_slug: Path<String>) -> impl Responder {
-    let mut conn = pool.get().expect("db connection error in index");
-
-    let slug_name = post_slug.into_inner();
-
-    match block(move || posts.filter(slug.eq(slug_name)).load::<Post>(&mut conn)).await {
-        Ok(data) => {
-            let data = data.unwrap();
-
-            if data.len() == 0 {
-                return HttpResponse::NotFound().finish();
-            }
-
-            let post = &data[0];
-
-            let mut ctx = Context::new();
-            ctx.insert("post", post);
-            HttpResponse::Ok()
-                .content_type("text/html")
-                .body(template.render("post.html", &ctx).unwrap())
-        }
+        Ok(data) => HttpResponse::Ok().body(format!("{:?}", data)),
         Err(error) => HttpResponse::Ok().body(format!("{:?}", error)),
     }
 }
@@ -84,14 +50,10 @@ async fn main() -> std::io::Result<()> {
     let pool = Pool::builder().build(connection).expect("pool error");
 
     HttpServer::new(move || {
-        let tera = Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*")).unwrap();
-
         App::new()
             .service(index)
             .service(new_post)
-            .service(post)
             .app_data(Data::new(pool.clone()))
-            .app_data(Data::new(tera))
     })
     .bind(("localhost", 9900))
     .unwrap()
