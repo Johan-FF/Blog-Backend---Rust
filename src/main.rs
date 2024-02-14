@@ -1,79 +1,62 @@
-#[macro_use]
+//#[macro_use]
 extern crate diesel;
 
-pub mod schema;
 pub mod models;
+pub mod schema;
+
+use self::models::{NewPostHandler, Post};
+//use self::schema::posts;
+use self::schema::posts::dsl::*;
 
 use dotenvy::dotenv;
 use std::env;
 
-use diesel::prelude::*;
 use diesel::pg::PgConnection;
+use diesel::prelude::*;
 
-fn main() {
+use diesel::r2d2::{ConnectionManager, Pool};
+
+use crate::web::{block, Data, Json};
+use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
+
+pub type DbPool = Pool<ConnectionManager<PgConnection>>;
+
+#[get("/")]
+async fn index(pool: Data<DbPool>) -> impl Responder {
+    let mut conn = pool.get().expect("db connection error in index");
+    match block(move || posts.load::<Post>(&mut conn)).await {
+        Ok(data) => HttpResponse::Ok().body(format!("{:?}", data)),
+        Err(error) => HttpResponse::Ok().body(format!("{:?}", error)),
+    }
+}
+
+#[post("/new-post")]
+async fn new_post(pool: Data<DbPool>, item: Json<NewPostHandler>) -> impl Responder {
+    let mut conn = pool.get().expect("db connection error in index");
+
+    match block(move || Post::create_post(&mut conn, &item)).await {
+        Ok(data) => HttpResponse::Ok().body(format!("{:?}", data)),
+        Err(error) => HttpResponse::Ok().body(format!("{:?}", error)),
+    }
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
     dotenv().ok();
-    let db_url = env::var("DATABASE_URL").expect("db_url nor found");
+    let db_url: String = env::var("DATABASE_URL").expect("db_url not found");
 
-    let mut conn = PgConnection::establish(&db_url).expect("db connection failed");
+    let connection = ConnectionManager::<PgConnection>::new(db_url);
 
-    use self::models::{Post, NewPost, SpecificPost};
-    use self::schema::posts;
-    use self::schema::posts::dsl::*;
+    let pool = Pool::builder().build(connection).expect("pool error");
 
-    // let new_post = NewPost{
-    //     title: "Mi primer blog",
-    //     body: "Lorem ipsum",
-    //     slug: "primer-post",
-    // };
-    // let _post: Post = diesel::insert_into(posts::table)
-    //     .values(new_post)
-    //     .get_result(&mut conn)
-    //     .expect("insert failed");
-
-    // let mut post_result = posts.load::<Post>(&mut conn).expect("query error");
-    // for post in post_result {
-    //     println!("{:?}", post);
-    // }
-
-    // post_result = posts.limit(1).load::<Post>(&mut conn).expect("query error");
-    // for post in post_result {
-    //     println!("{:?}", post);
-    // }
-
-    // let specific_post_result = posts.select((title, body))
-    //     .load::<SpecificPost>(&mut conn)
-    //     .expect("query error");
-    // for post in specific_post_result {
-    //     println!("{:?}", post);
-    // }
-
-    // post_result = posts.order(id.desc()).limit(1).load::<Post>(&mut conn).expect("query error");
-    // for post in post_result {
-    //     println!("{:?}", post);
-    // }
-
-    // let mut post_result = posts.filter(id.eq(5)).limit(1).load::<Post>(&mut conn).expect("query error");
-    // for post in post_result {
-    //     println!("{:?}", post);
-    // }
-
-    // let mut post_update = diesel::update(posts.filter(id.eq(5)))
-    //     .set((
-    //         body.eq("Lorem ipsum"),
-    //         slug.eq("first-post")))
-    //     .get_result::<Post>(&mut conn)
-    //     .expect("update error");
-    // post_update = diesel::update(posts.filter(id.eq(5)))
-    //     .set(slug.eq("primer-post"))
-    //     .get_result::<Post>(&mut conn)
-    //     .expect("update error");
-
-    // post_result = posts.filter(id.eq(5)).limit(1).load::<Post>(&mut conn).expect("query error");
-    // for post in post_result {
-    //     println!("{:?}", post);
-    // }
-
-    diesel::delete(posts.filter(id.eq(5))).execute(&mut conn).expect("delete error");
-
-    diesel::delete(posts.filter(title.like("%-blog%"))).execute(&mut conn).expect("delete error");
+    HttpServer::new(move || {
+        App::new()
+            .service(index)
+            .service(new_post)
+            .app_data(Data::new(pool.clone()))
+    })
+    .bind(("localhost", 9900))
+    .unwrap()
+    .run()
+    .await
 }
