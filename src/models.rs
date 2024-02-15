@@ -25,7 +25,7 @@ use super::schema::posts;
 use diesel::prelude::*;
 
 #[derive(Insertable)]
-#[diesel(table_name=posts)]
+#[table_name = "posts"]
 pub struct NewPost<'a> {
     pub title: &'a str,
     pub slug: &'a str,
